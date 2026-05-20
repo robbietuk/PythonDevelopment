@@ -59,7 +59,7 @@ class TradeConsumer(AsyncQueueClass):
             except asyncio.TimeoutError:
                 print("Timeout waiting for a trade.")
 
-    async def ProcessData(self) -> None:
+    async def process_data(self) -> None:
         try:
             async for trade in self.stream_ticks():
                 if trade is None:  # Sentinel value to exit
@@ -88,7 +88,7 @@ async def main() -> None:
 
     # Start producer and consumer tasks
     producer_task: asyncio.Task = asyncio.create_task(generator.generate_loop())
-    consumer_task: asyncio.Task = asyncio.create_task(consumer.ProcessData())
+    consumer_task: asyncio.Task = asyncio.create_task(consumer.process_data())
 
     # Wait for the stop event
     while not stop_event.is_set():
