@@ -66,10 +66,13 @@ class TradeConsumer(AsyncQueueClass):
             async for trade in self.stream_ticks():
                 if trade is None:  # Sentinel value to exit
                     break
-                print(f"Consumed trade: {trade}")  # Handle the trade (e.g., log, process, etc.)
+                self._process_trade(trade)
                 self._queue.task_done()
         except asyncio.CancelledError:
             print("TradeConsumer task canceled. Cleaning up...")
+
+    def _process_trade(self, trade: Trade):
+        print(f"Consumed trade: {trade}")  # Handle the trade (e.g., log, process, etc.)
 
 # Function to handle input in a separate thread
 def wait_for_input(stop_event: threading.Event):
