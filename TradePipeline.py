@@ -24,15 +24,6 @@ class AsyncQueueClass(ABC):
     def stop(self):
         self._stop = True
 
-    async def main_loop(self):
-        while not self._stop:
-            await self.loop_iteration()
-        
-    @abstractmethod
-    async def loop_iteration(self):
-        pass
-
-
 class RandomGenerator(AsyncQueueClass):
     _symbols = ['AAPL', 'GOOG', 'MSFT', 'AMZN', 'TSLA']
 
@@ -49,20 +40,36 @@ class RandomGenerator(AsyncQueueClass):
         return Trade(symbol, timestamp, price, quantity)
 
     # Async task to produce random trades and put them in the queue
-    async def loop_iteration(self):
-        trade = self.generate_trade()
-        await self._queue.put(trade)
-        await asyncio.sleep(0.01)  # Simulate delay between trades
-
+    async def generate_loop(self):
+        try:
+            while not self._stop:
+                trade = self.generate_trade()
+                await self._queue.put(trade)
+                await asyncio.sleep(0.1)  # Simulate delay between trades
+        except asyncio.CancelledError:
+            print("RandomGenerator task canceled. Cleaning up...")
 
 class TradeConsumer(AsyncQueueClass):
     def __init__(self, queue):
         super().__init__(queue)
 
-    async def loop_iteration(self) -> None:
-        trade = await self._queue.get()
-        print(f"Consumed trade: {trade}")  # Handle the trade (e.g., log, process, etc.)
-        self._queue.task_done()
+    async def stream_ticks(self):
+        while True:
+            try:
+                tick = await asyncio.wait_for(self._queue.get(), timeout=5.0)  # Timeout after 5 seconds
+                yield tick
+            except asyncio.TimeoutError:
+                print("Timeout waiting for a trade.")
+
+    async def ProcessData(self) -> None:
+        try:
+            async for trade in self.stream_ticks():
+                if trade is None:  # Sentinel value to exit
+                    break
+                print(f"Consumed trade: {trade}")  # Handle the trade (e.g., log, process, etc.)
+                self._queue.task_done()
+        except asyncio.CancelledError:
+            print("TradeConsumer task canceled. Cleaning up...")
 
 # Function to handle input in a separate thread
 def wait_for_input(stop_event: threading.Event):
@@ -80,21 +87,30 @@ async def main():
     input_thread.start()
 
     # Start producer and consumer tasks
-    producer_task = asyncio.create_task(generator.main_loop())
-    consumer_task = asyncio.create_task(consumer.main_loop())
+    producer_task = asyncio.create_task(generator.generate_loop())
+    consumer_task = asyncio.create_task(consumer.ProcessData())
 
     # Wait for the stop event
     while not stop_event.is_set():
         await asyncio.sleep(0.1)
 
+    # Signal shutdown
     generator.stop()
+    await queue.put(None)  # Sentinel value to stop the consumer
     await queue.join()  # Wait until all trades are processed
 
-    producer_task.cancel()  # Cancel the producer task
-    consumer_task.cancel()  # Cancel the consumer task
+    # Cancel tasks
+    producer_task.cancel()
+    consumer_task.cancel()
+
+    try:
+        await asyncio.gather(producer_task, consumer_task, return_exceptions=True)
+    except asyncio.CancelledError:
+        pass
 
     # Ensure the input thread finishes
     input_thread.join()
+    print("Shutdown complete.")
 
 
 if __name__ == "__main__":
