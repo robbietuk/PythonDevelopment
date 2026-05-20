@@ -4,10 +4,9 @@ import queue
 import random
 import time
 import threading
-
 from dataclasses import dataclass
 from py_compile import main
-
+from typing import AsyncGenerator
 
 @dataclass
 class Trade:
@@ -17,46 +16,45 @@ class Trade:
     quantity: int
 
 class AsyncQueueClass(ABC):
-    def __init__(self, queue):
-        self._stop = False
-        self._queue = queue
+    def __init__(self, queue: asyncio.Queue[Trade]):
+        self._stop: bool = False
+        self._queue: asyncio.Queue[Trade] = queue
 
-    def stop(self):
+    def stop(self) -> None:
         self._stop = True
 
 class RandomGenerator(AsyncQueueClass):
-    _symbols = ['AAPL', 'GOOG', 'MSFT', 'AMZN', 'TSLA']
+    _symbols: list[str] = ['AAPL', 'GOOG', 'MSFT', 'AMZN', 'TSLA']
 
-    def __init__(self, queue):
+    def __init__(self, queue: asyncio.Queue[Trade]):
         super().__init__(queue)
-        self._symbols = ['AAPL', 'GOOG', 'MSFT', 'AMZN', 'TSLA']
-        
+        self._symbols: list[str] = ['AAPL', 'GOOG', 'MSFT', 'AMZN', 'TSLA']
+
     def generate_trade(self) -> Trade:
-        symbol = random.choice(self._symbols)
-        timestamp = time.strftime('%Y-%m-%d %H:%M:%S')
-        price = round(random.uniform(100, 1500), 2)
-        quantity = random.randint(1, 100)
+        symbol: str = random.choice(self._symbols)
+        timestamp: str = time.strftime('%Y-%m-%d %H:%M:%S')
+        price: float = round(random.uniform(100, 1500), 2)
+        quantity: int = random.randint(1, 100)
 
         return Trade(symbol, timestamp, price, quantity)
 
-    # Async task to produce random trades and put them in the queue
-    async def generate_loop(self):
+    async def generate_loop(self) -> None:
         try:
             while not self._stop:
-                trade = self.generate_trade()
+                trade: Trade = self.generate_trade()
                 await self._queue.put(trade)
                 await asyncio.sleep(0.1)  # Simulate delay between trades
         except asyncio.CancelledError:
             print("RandomGenerator task canceled. Cleaning up...")
 
 class TradeConsumer(AsyncQueueClass):
-    def __init__(self, queue):
+    def __init__(self, queue: asyncio.Queue[Trade]):
         super().__init__(queue)
 
-    async def stream_ticks(self):
+    async def stream_ticks(self) -> AsyncGenerator[Trade, None]:
         while True:
             try:
-                tick = await asyncio.wait_for(self._queue.get(), timeout=5.0)  # Timeout after 5 seconds
+                tick: Trade = await asyncio.wait_for(self._queue.get(), timeout=5.0)  # Timeout after 5 seconds
                 yield tick
             except asyncio.TimeoutError:
                 print("Timeout waiting for a trade.")
@@ -71,27 +69,26 @@ class TradeConsumer(AsyncQueueClass):
         except asyncio.CancelledError:
             print("TradeConsumer task canceled. Cleaning up...")
 
-    def _process_trade(self, trade: Trade):
+    def _process_trade(self, trade: Trade) -> None:
         print(f"Consumed trade: {trade}")  # Handle the trade (e.g., log, process, etc.)
 
-# Function to handle input in a separate thread
-def wait_for_input(stop_event: threading.Event):
+def wait_for_input(stop_event: threading.Event) -> None:
     input("Press Enter to stop...\n")
     stop_event.set()
 
-async def main():
-    queue = asyncio.Queue(maxsize=100)
-    generator = RandomGenerator(queue)
-    consumer = TradeConsumer(queue)
-    stop_event = threading.Event()
+async def main() -> None:
+    queue: asyncio.Queue[Trade] = asyncio.Queue(maxsize=100)
+    generator: RandomGenerator = RandomGenerator(queue)
+    consumer: TradeConsumer = TradeConsumer(queue)
+    stop_event: threading.Event = threading.Event()
 
     # Start the input thread
-    input_thread = threading.Thread(target=wait_for_input, args=(stop_event,))
+    input_thread: threading.Thread = threading.Thread(target=wait_for_input, args=(stop_event,))
     input_thread.start()
 
     # Start producer and consumer tasks
-    producer_task = asyncio.create_task(generator.generate_loop())
-    consumer_task = asyncio.create_task(consumer.ProcessData())
+    producer_task: asyncio.Task = asyncio.create_task(generator.generate_loop())
+    consumer_task: asyncio.Task = asyncio.create_task(consumer.ProcessData())
 
     # Wait for the stop event
     while not stop_event.is_set():
@@ -114,7 +111,6 @@ async def main():
     # Ensure the input thread finishes
     input_thread.join()
     print("Shutdown complete.")
-
 
 if __name__ == "__main__":
     asyncio.run(main())
