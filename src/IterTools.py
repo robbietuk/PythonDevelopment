@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from itertools import groupby
 from operator import attrgetter
 
-@dataclass
+@dataclass(frozen=True, slots=True)
 class Record:
     sector: str
     ticker: str
